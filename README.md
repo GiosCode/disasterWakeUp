@@ -1,5 +1,6 @@
 # disasterWakeUp
-Wake up to latest disaster happenings in a compact SMS.
+Near California fire tracker. Track new fires near your location
 
 Dependencies:
 libcurl4-openssl-dev
+libjson-c-dev

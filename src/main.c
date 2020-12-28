@@ -5,24 +5,29 @@
 #include <string.h>
 
 uint8_t getFireData(void);
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
+uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer);
 
 const char *myEmail;
 const char *passwd;
 const char *phEmail;
 const char *mailServ;
+const char *zipCode;
+
 int main(int argc, char const *argv[])
 {
     //TODO: Extend to any location
     //TODO: Add variable notifiaiton time (V2)
+    
+    //Format "zipCode senderEmail "senderEmailPassword" PhoneEmail MailServer"
+    zipCode  = argv[1];
+    myEmail  = argv[2];
+    passwd   = argv[3];
+    phEmail  = argv[4];
+    mailServ = argv[5];
 
-    //TODO: Need to verify they pass in a valid values;
-    printf("Getting information for %s\n", argv[1]); 
-    myEmail  = argv[1];
-    passwd   = argv[2];
-    phEmail  = argv[3];
-    mailServ = argv[4];
-
+    //TODO: Need to verify they pass in a valid values
+    printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ); 
+    sendText(myEmail,passwd,phEmail,mailServ);
     if(getFireData() == ERROR)
     {
         printf("Error getting fire data\n");
@@ -31,13 +36,24 @@ int main(int argc, char const *argv[])
     
     return 0;
 }
-
+/*
+ * Name: getFireData 
+ * Parameters:
+ *  - N/A
+ * Return: 
+ *  - uint8_t: If the fire data download was a success
+ * Description: Downloads latest fire data.
+*/
 uint8_t getFireData(void)
 {
-    CURL *fireHandle = curl_easy_init();
+    CURLcode res = CURLE_OK;
+    CURL *fireHandle;
+
+    fireHandle = curl_easy_init();
     if (fireHandle == NULL)
     {
-        return (uint8_t)ERROR;
+        curl_easy_cleanup(fireHandle);
+        return ERROR;
     }
     else
     {
@@ -51,42 +67,23 @@ uint8_t getFireData(void)
         curl_easy_setopt(fireHandle, CURLOPT_FAILONERROR, 1L); //Fail on HTTP error
 
         //Download the json data
-        int ret = curl_easy_perform(fireHandle);
-        //Check download success
-        if(ret == CURLE_OK)
-        {
-            printf("Downloaded Fire Data Succeessfully\n");
-        }
-        else
-        {
-            printf("Fire Data Download Failed: %s\n",curl_easy_strerror(ret));
-        }
+        res = curl_easy_perform(fireHandle);
 
-        //parseFireData(fireptr);
-        int fileSent = sendText(myEmail, passwd, phEmail, mailServ, fireptr);
-        if (fileSent == TRUE)
+        //Check download success
+        if (res != CURLE_OK)
         {
-            printf("Email sent\n");
+            printf("Fire Data Download Failed: %s\n", curl_easy_strerror(res));
+            fclose(fireptr);
+            curl_easy_cleanup(fireHandle);
+            return ERROR;
         }
+        
         //File and CURL Cleanup
         fclose(fireptr);
         curl_easy_cleanup(fireHandle);
-        return (uint8_t)OK;
+        return OK;
     }
 }
-// uint8_t parseFireData(FILE *fp)
-// {
-//     char buffer[5000];
-//     fread(buffer, 5000, 1, fp);
-//     struct json_object *parsedData;
-//     struct json_object *name;
-//     struct json_object *county;
-//     struct json_object *location;
-//     struct json_object *lastUpdated;
-//     struct json_object *moreInfo;
-
-//     parsedData = json_tokener_parse(buffer);
-// }
 
 struct upload_status 
 {
@@ -131,10 +128,9 @@ static size_t payload_source(void *ptr, size_t size, size_t nmemb, void *userp)
   return 0;
 }
 
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload)
+uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer)
 {
     //Setup curl
-
     CURL *curl;
     CURLcode res = CURLE_OK;
     struct curl_slist *recipients = NULL;
@@ -146,8 +142,8 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     if(curl)
     {
         curl_easy_setopt(curl, CURLOPT_USERNAME, email);
-        curl_easy_setopt(curl, CURLOPT_PASSWORD, "password here");
-        curl_easy_setopt(curl, CURLOPT_URL, "smtp://smtp.gmail.com:587/");
+        curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
+        curl_easy_setopt(curl, CURLOPT_URL, mailServer);
         curl_easy_setopt(curl, CURLOPT_USE_SSL, (long) CURLUSESSL_ALL);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
@@ -156,15 +152,15 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
         curl_easy_setopt(curl, CURLOPT_MAIL_FROM, email);
 
         /* To email */
-        //recipients = curl_slist_append(recipients, phoneEmail);
-        recipients = curl_slist_append(recipients, "email here");
+        recipients = curl_slist_append(recipients, phoneEmail);
+        //recipients = curl_slist_append(recipients, "");
         curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recipients);
         FILE *fireptr;
-        fireptr = fopen("firedata.json","r");
+        fireptr = fopen("hello.txt","r");
         /* Setup payload */
-        //curl_easy_setopt(curl, CURLOPT_READDATA, (void *)fireptr);
-        curl_easy_setopt(curl, CURLOPT_READFUNCTION, payload_source);
-        curl_easy_setopt(curl, CURLOPT_READDATA, &upload_ctx);
+        curl_easy_setopt(curl, CURLOPT_READDATA, (void *)fireptr);
+        //curl_easy_setopt(curl, CURLOPT_READFUNCTION, payload_source);
+        //curl_easy_setopt(curl, CURLOPT_READDATA, &upload_ctx);
         /* Enable uploads */
         curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
 
@@ -194,3 +190,5 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
 
     return ERROR;
 }
+
+

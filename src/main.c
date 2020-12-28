@@ -5,7 +5,8 @@
 #include <string.h>
 
 uint8_t getFireData(void);
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer);
+uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
+uint8_t makePayload(FILE *payload);
 
 const char *myEmail;
 const char *passwd;
@@ -26,8 +27,10 @@ int main(int argc, char const *argv[])
     mailServ = argv[5];
 
     //TODO: Need to verify they pass in a valid values
-    printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ); 
-    sendText(myEmail,passwd,phEmail,mailServ);
+    FILE *payload;
+    printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
+    makePayload(payload);
+    sendText(myEmail,passwd,phEmail,mailServ, payload);
     if(getFireData() == ERROR)
     {
         printf("Error getting fire data\n");
@@ -85,62 +88,25 @@ uint8_t getFireData(void)
     }
 }
 
-struct upload_status 
-{
-  int lines_read;
-};
-
-static const char *payload_text[] = {
-  "Date: Mon, 29 Nov 2010 21:54:29 +1100\r\n",
-  "To: ""GIo"  "\r\n",
-  "From: ""Gio2"  "\r\n",
-  "Cc: "  "\r\n",
-  "Message-ID: <dcd7cb36-11db-487a-9f3a-e652a9458efd@"
-  "rfcpedant.example.org>\r\n",
-  "Subject: SMTP example message\r\n",
-  "\r\n", /* empty line to divide headers from body, see RFC5322 */ 
-  "The body of the message starts here.\r\n",
-  "Attempt4 \r\n",
-  "It could be a lot of lines, could be 3 encoded, whatever.\r\n",
-  "Check RFC5322.\r\n",
-  NULL
-};
-
-static size_t payload_source(void *ptr, size_t size, size_t nmemb, void *userp)
-{
-  struct upload_status *upload_ctx = (struct upload_status *)userp;
-  const char *data;
- 
-  if((size == 0) || (nmemb == 0) || ((size*nmemb) < 1)) {
-    return 0;
-  }
- 
-  data = payload_text[upload_ctx->lines_read];
- 
-  if(data) {
-    size_t len = strlen(data);
-    memcpy(ptr, data, len);
-    upload_ctx->lines_read++;
- 
-    return len;
-  }
- 
-  return 0;
-}
-
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer)
+uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload)
 {
     //Setup curl
     CURL *curl;
     CURLcode res = CURLE_OK;
     struct curl_slist *recipients = NULL;
-    struct upload_status upload_ctx;
- 
-    upload_ctx.lines_read = 0;
-    
+
     curl = curl_easy_init();
     if(curl)
     {
+        payload = fopen("payload.txt", "r");
+        if (payload == NULL)
+        {
+            curl_easy_cleanup(curl);
+            printf("Error opening file payload");
+            fclose(payload);
+            return ERROR;
+        }
+
         curl_easy_setopt(curl, CURLOPT_USERNAME, email);
         curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
         curl_easy_setopt(curl, CURLOPT_URL, mailServer);
@@ -153,14 +119,10 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
 
         /* To email */
         recipients = curl_slist_append(recipients, phoneEmail);
-        //recipients = curl_slist_append(recipients, " ");
         curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recipients);
-        FILE *fireptr;
-        fireptr = fopen("hello.txt","r");
+        
         /* Setup payload */
-        curl_easy_setopt(curl, CURLOPT_READDATA, (void *)fireptr);
-        //curl_easy_setopt(curl, CURLOPT_READFUNCTION, payload_source);
-        //curl_easy_setopt(curl, CURLOPT_READDATA, &upload_ctx);
+        curl_easy_setopt(curl, CURLOPT_READDATA, (void *)payload);
         /* Enable uploads */
         curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
 
@@ -174,12 +136,14 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
             /* Free recipient list */
              curl_slist_free_all(recipients);
 
-             /* Cleanup curl */
-             curl_easy_cleanup(curl);
-
-             return ERROR;
+            /* Cleanup curl */
+            curl_easy_cleanup(curl);
+            /* Close File */
+            fclose(payload);
+            return ERROR;
         }
-
+        
+        fclose(payload);
         /* Free recipient list */
         curl_slist_free_all(recipients);
 
@@ -191,4 +155,11 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     return ERROR;
 }
 
-
+uint8_t makePayload(FILE *payload)
+{
+    payload = fopen("payload.txt", "w+");
+    fprintf(payload, "From: John Smith <john@example.com>\nTo: Joe Smith <smith@example.com>\nSubject: No Space\n Hey there");
+    fprintf(payload,"\n\nSomething something something");
+    fclose(payload);
+    return OK;
+}

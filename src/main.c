@@ -153,7 +153,7 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
 
         /* To email */
         recipients = curl_slist_append(recipients, phoneEmail);
-        //recipients = curl_slist_append(recipients, "");
+        //recipients = curl_slist_append(recipients, " ");
         curl_easy_setopt(curl, CURLOPT_MAIL_RCPT, recipients);
         FILE *fireptr;
         fireptr = fopen("hello.txt","r");

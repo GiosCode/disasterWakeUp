@@ -1,14 +1,14 @@
 #include <stdio.h>
 #include "global.h"
 #include <curl/curl.h>
-#include <json-c/json.h>//maybe delete
+#include <json-c/json.h>
 #include <string.h>
 #include <time.h>
 
 uint8_t getFireData(void);
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
 uint8_t makePayload(FILE *payload);
-
+uint8_t getData(char *source, char *fileName);
 const char *myEmail;
 const char *passwd;
 const char *phEmail;
@@ -16,13 +16,10 @@ const char *mailServ;
 const char *zipCode;
 struct tm  *timeinfo;
 
-struct userInfo
+struct location
 {
-    const char *myEmail;
-    const char *passwd;
-    const char *phEmail;
-    const char *mailServ;
-    const char *zipCode;   
+    float lat;
+    float lon;
 };
 
 int main(int argc, char const *argv[])
@@ -35,16 +32,16 @@ int main(int argc, char const *argv[])
     
     timeRaw = time(NULL);
     timeinfo = localtime(&timeRaw);
-    while (1)
-    {
-        timeRaw = time(NULL);
-        timeinfo = localtime(&timeRaw);
-        if ((timeinfo->tm_hour == 15)&&(timeinfo->tm_min == 40))
-        {
-            printf("The local time is %s\n", asctime(timeinfo));
-            break;
-        }
-    }
+    // while (1)
+    // {//TODO: Sleep until the desired time rather than constantly checking
+    //     timeRaw = time(NULL);
+    //     timeinfo = localtime(&timeRaw);
+    //     if ((timeinfo->tm_hour == 15)&&(timeinfo->tm_min == 40))
+    //     {
+    //         printf("The local time is %s\n", asctime(timeinfo));
+    //         break;
+    //     }
+    // }
     //Format "zipCode senderEmail "senderEmailPassword" PhoneEmail MailServer"
     zipCode  = argv[1];
     myEmail  = argv[2];
@@ -55,7 +52,11 @@ int main(int argc, char const *argv[])
     //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
-    if(getFireData() == ERROR)
+    /* TODO: Get latitude and longitude based on zipcode */
+    /* TODO: Get fire data */
+    /* TODO: Get earthquake data */
+    /* TODO: Get weather data */
+    if(getData("https://www.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=false","fire.json") == ERROR)
     {
         printf("Error getting fire data\n");
         return 0;
@@ -65,55 +66,19 @@ int main(int argc, char const *argv[])
 
     return 0;
 }
+
 /*
- * Name: getFireData 
+ * Name: sendtext 
  * Parameters:
- *  - N/A
+ *  - char const *email     : User's email, where the email will be sent from.
+ *  - char const *password  : Password for the "email" parameter. (If two factor is activated user will need an App Password).
+ *  - char const *phoneEmail: Email for phone number. Usually "number@SMSGateway", to find look up "[Phone Provider] Email to SMS Gateway".
+ *  - char const *mailServer: Mail Server for "email" parameter.
+ *  - FILE *payload         : Pointer to payload file.
  * Return: 
  *  - uint8_t: If the fire data download was a success
  * Description: Downloads latest fire data.
 */
-uint8_t getFireData(void)
-{
-    CURLcode res = CURLE_OK;
-    CURL *fireHandle;
-
-    fireHandle = curl_easy_init();
-    if (fireHandle == NULL)
-    {
-        curl_easy_cleanup(fireHandle);
-        return ERROR;
-    }
-    else
-    {
-        //File Setup
-        FILE *fireptr;
-        fireptr = fopen("firedata.json","wb");
-
-        //Curl Setup
-        curl_easy_setopt(fireHandle, CURLOPT_URL, "https://www.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=false");
-        curl_easy_setopt(fireHandle, CURLOPT_WRITEDATA, fireptr);
-        curl_easy_setopt(fireHandle, CURLOPT_FAILONERROR, 1L); //Fail on HTTP error
-
-        //Download the json data
-        res = curl_easy_perform(fireHandle);
-
-        //Check download success
-        if (res != CURLE_OK)
-        {
-            printf("Fire Data Download Failed: %s\n", curl_easy_strerror(res));
-            fclose(fireptr);
-            curl_easy_cleanup(fireHandle);
-            return ERROR;
-        }
-        
-        //File and CURL Cleanup
-        fclose(fireptr);
-        curl_easy_cleanup(fireHandle);
-        return OK;
-    }
-}
-
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload)
 {
     //Setup curl
@@ -181,10 +146,59 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
 }
 
 uint8_t makePayload(FILE *payload)
-{
+{//TODO: FInish function with proper payload
     payload = fopen("payload.txt", "w+");
-    fprintf(payload, "From: DisasterWakeup <%s>\nTo: Me <%s>\nSubject: No Space\n Hey there the time is %s", myEmail, phEmail, asctime(timeinfo));
-    fprintf(payload,"\n\nSomething something something");
-    fclose(payload);
+
+    if (payload != NULL)
+    {
+    
+        //Add Email Header
+        fprintf(payload, "From: DisasterWakeup <%s>\nTo: Me <%s>\nSubject: %s\n", myEmail, phEmail, asctime(timeinfo));
+        //Email Payload
+        fprintf(payload,"\nPayload Here");
+        fclose(payload);
+    }
+
     return OK;
 }
+
+uint8_t getData(char *source, char *fileName)
+{
+    CURLcode res = CURLE_OK;
+    CURL *handle;
+
+    handle = curl_easy_init();
+    if (handle == NULL)
+    {
+        curl_easy_cleanup(handle);
+        return ERROR;
+    }
+    else
+    {
+        //File Setup
+        FILE *data;
+        data = fopen(fileName,"wb");
+
+        //Curl Setup
+        curl_easy_setopt(handle, CURLOPT_URL, source);
+        curl_easy_setopt(handle, CURLOPT_WRITEDATA, data);
+        curl_easy_setopt(handle, CURLOPT_FAILONERROR, 1L); //Fail on HTTP error
+
+        //Download the json data
+        res = curl_easy_perform(handle);
+
+        //Check download success
+        if (res != CURLE_OK)
+        {
+            printf("%s Data Download Failed: %s\n", source, curl_easy_strerror(res));
+            fclose(data);
+            curl_easy_cleanup(handle);
+            return ERROR;
+        }
+        
+        //File and CURL Cleanup
+        fclose(data);
+        curl_easy_cleanup(handle);
+        return OK;
+    }
+} 

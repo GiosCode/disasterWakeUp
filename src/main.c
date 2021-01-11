@@ -1,35 +1,36 @@
 #include <stdio.h>
 #include "global.h"
 #include <curl/curl.h>
-#include <json-c/json.h>
 #include <string.h>
 #include <time.h>
+#include "jsmn.h"
+#include <sys/stat.h>
+#include <stdlib.h>
 
-uint8_t getFireData(void);
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
-uint8_t makePayload(FILE *payload);
-uint8_t getData(char *source, char *fileName);
-const char *myEmail;
-const char *passwd;
-const char *phEmail;
-const char *mailServ;
-const char *zipCode;
-struct tm  *timeinfo;
-
-struct location
+typedef struct
 {
     float lat;
     float lon;
-};
+} latLon;
+
+uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
+uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
+uint8_t getData(char *source, const char *fileName);
+uint8_t getZipCode(const char *zipCode, latLon *location);
 
 int main(int argc, char const *argv[])
 {
     //TODO: Extend to any location
     //TODO: Add variable notifiaiton time (V2)
-    
+    const char *myEmail;
+    const char *passwd;
+    const char *phEmail;
+    const char *mailServ;
+    const char *zipCode;
+    struct tm  *timeinfo;
     //Start time
     time_t timeRaw;
-    
+    latLon *loc;
     timeRaw = time(NULL);
     timeinfo = localtime(&timeRaw);
     // while (1)
@@ -61,8 +62,9 @@ int main(int argc, char const *argv[])
         printf("Error getting fire data\n");
         return 0;
     }
-    makePayload(payload);
-    sendText(myEmail,passwd,phEmail,mailServ, payload);
+    printf("%d\n",getZipCode(zipCode, loc));
+    makePayload(payload, myEmail, phEmail, timeinfo);
+    //sendText(myEmail,passwd,phEmail,mailServ, payload);
 
     return 0;
 }
@@ -145,7 +147,7 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     return ERROR;
 }
 
-uint8_t makePayload(FILE *payload)
+uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time)
 {//TODO: FInish function with proper payload
     payload = fopen("payload.txt", "w+");
 
@@ -153,7 +155,7 @@ uint8_t makePayload(FILE *payload)
     {
     
         //Add Email Header
-        fprintf(payload, "From: DisasterWakeup <%s>\nTo: Me <%s>\nSubject: %s\n", myEmail, phEmail, asctime(timeinfo));
+        fprintf(payload, "From: DisasterWakeup <%s>\nTo: Me <%s>\nSubject: %s\n", email, phoneEmail, asctime(time));
         //Email Payload
         fprintf(payload,"\nPayload Here");
         fclose(payload);
@@ -162,7 +164,7 @@ uint8_t makePayload(FILE *payload)
     return OK;
 }
 
-uint8_t getData(char *source, char *fileName)
+uint8_t getData(char *source, const char *fileName)
 {
     CURLcode res = CURLE_OK;
     CURL *handle;
@@ -178,7 +180,12 @@ uint8_t getData(char *source, char *fileName)
         //File Setup
         FILE *data;
         data = fopen(fileName,"wb");
-
+        if (data == NULL)
+        {
+            curl_easy_cleanup(handle);
+            return ERROR;
+        }
+        
         //Curl Setup
         curl_easy_setopt(handle, CURLOPT_URL, source);
         curl_easy_setopt(handle, CURLOPT_WRITEDATA, data);
@@ -190,7 +197,7 @@ uint8_t getData(char *source, char *fileName)
         //Check download success
         if (res != CURLE_OK)
         {
-            printf("%s Data Download Failed: %s\n", source, curl_easy_strerror(res));
+            fprintf(stderr, "%s Data Download Failed: %s\n", source, curl_easy_strerror(res));
             fclose(data);
             curl_easy_cleanup(handle);
             return ERROR;
@@ -201,4 +208,67 @@ uint8_t getData(char *source, char *fileName)
         curl_easy_cleanup(handle);
         return OK;
     }
-} 
+}
+
+uint8_t getZipCode(const char *zipCode, latLon *location)
+{
+    FILE *fp;
+    struct stat filestatus;
+    const char *fileName = "zipCodeInfo.json";
+    char *buffer;
+
+    /* Create request URL */
+    char zipLUT[115] = "https://public.opendatasoft.com/api/records/1.0/search/?dataset=us-zip-code-latitude-and-longitude&q=";
+    strcat(zipLUT,zipCode);
+
+    /* Download Latitude/Longitude data */
+    if (getData(zipLUT, fileName) == ERROR)
+    {
+        fprintf(stderr, "Failed to download Zip Code\n");
+    }
+    
+    if (stat(fileName, &filestatus) != 0) 
+    {
+            fprintf(stderr, "File %s not found\n", fileName);
+            return ERROR;
+    }
+    
+    buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
+    memset(buffer, 0, filestatus.st_size + 1);
+    if(buffer == NULL)
+    {
+        fprintf(stderr, "Malloc error: Unable to allocate %ld bytes\n", filestatus.st_size);
+        return ERROR;
+    }
+
+    fp = fopen(fileName, "rb");
+    if(fp == NULL)
+    {
+        fprintf(stderr, "Failed to open %s\n", fileName);
+        fclose(fp);
+        free(buffer);
+        return ERROR;
+    }
+
+    if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
+    {
+        fprintf(stderr, "Failed to read %s", fileName);
+        free(buffer);
+        fclose(fp);
+        return ERROR;
+    }
+
+    fclose(fp);
+
+    /* Extract longitude & latitude values */
+    jsmn_parser parser;
+    jsmn_init(&parser);
+    printf("%s\n%ld\n",buffer, strlen(buffer));
+    int tokenNum = jsmn_parse(&parser, buffer, strlen(buffer), NULL, 1);
+    printf("Number of tokens %d\n",tokenNum);
+    jsmntok_t tokens[tokenNum];
+    jsmn_parse(&parser, buffer, strlen(buffer), tokens, tokenNum);
+    free(buffer);
+    printf("%d\n",tokens[0].start);
+return OK;
+}

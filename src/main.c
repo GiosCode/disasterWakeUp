@@ -3,7 +3,6 @@
 #include <curl/curl.h>
 #include <string.h>
 #include <time.h>
-#include "jsmn.h"
 #include <sys/stat.h>
 #include <stdlib.h>
 
@@ -261,14 +260,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     fclose(fp);
 
     /* Extract longitude & latitude values */
-    jsmn_parser parser;
-    jsmn_init(&parser);
-    printf("%s\n%ld\n",buffer, strlen(buffer));
-    int tokenNum = jsmn_parse(&parser, buffer, strlen(buffer), NULL, 1);
-    printf("Number of tokens %d\n",tokenNum);
-    jsmntok_t tokens[tokenNum];
-    jsmn_parse(&parser, buffer, strlen(buffer), tokens, tokenNum);
+
     free(buffer);
-    printf("%d\n",tokens[0].start);
 return OK;
 }

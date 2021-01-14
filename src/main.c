@@ -5,11 +5,12 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <json-c/json.h>
 
 typedef struct
 {
-    float lat;
-    float lon;
+    double lat;
+    double lon;
 } latLon;
 
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
@@ -29,7 +30,7 @@ int main(int argc, char const *argv[])
     struct tm  *timeinfo;
     //Start time
     time_t timeRaw;
-    latLon *loc;
+    latLon loc;
     timeRaw = time(NULL);
     timeinfo = localtime(&timeRaw);
     // while (1)
@@ -61,7 +62,8 @@ int main(int argc, char const *argv[])
         printf("Error getting fire data\n");
         return 0;
     }
-    printf("%d\n",getZipCode(zipCode, loc));
+    getZipCode(zipCode, &loc);
+    printf("lat %f, lon %f\n",loc.lat,loc.lon);
     makePayload(payload, myEmail, phEmail, timeinfo);
     //sendText(myEmail,passwd,phEmail,mailServ, payload);
 
@@ -216,6 +218,14 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     const char *fileName = "zipCodeInfo.json";
     char *buffer;
 
+    /* JSON parsing variables */
+    struct json_object *jsonParsed;
+    struct json_object *records;
+    struct json_object *data;
+    struct json_object *fields;
+    struct json_object *latitude;
+    struct json_object *longitude;
+
     /* Create request URL */
     char zipLUT[115] = "https://public.opendatasoft.com/api/records/1.0/search/?dataset=us-zip-code-latitude-and-longitude&q=";
     strcat(zipLUT,zipCode);
@@ -225,13 +235,14 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     {
         fprintf(stderr, "Failed to download Zip Code\n");
     }
-    
+
+    /* Get file information */
     if (stat(fileName, &filestatus) != 0) 
     {
             fprintf(stderr, "File %s not found\n", fileName);
             return ERROR;
     }
-    
+    /* Dynamically allocate buffer size based on file size */
     buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
     memset(buffer, 0, filestatus.st_size + 1);
     if(buffer == NULL)
@@ -239,7 +250,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
         fprintf(stderr, "Malloc error: Unable to allocate %ld bytes\n", filestatus.st_size);
         return ERROR;
     }
-
+    /* Open and read file contents to buffer */
     fp = fopen(fileName, "rb");
     if(fp == NULL)
     {
@@ -248,7 +259,6 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
         free(buffer);
         return ERROR;
     }
-
     if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
     {
         fprintf(stderr, "Failed to read %s", fileName);
@@ -256,11 +266,20 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
         fclose(fp);
         return ERROR;
     }
-
     fclose(fp);
 
-    /* Extract longitude & latitude values */
-
+    /* Parse JSON file for location values */
+    jsonParsed = json_tokener_parse(buffer);
     free(buffer);
-return OK;
+    //TODO: Clean up these calls to be more concise
+    json_object_object_get_ex(jsonParsed, "records", &records);
+    data = json_object_array_get_idx(records, 0);
+    json_object_object_get_ex(data,   "fields",    &fields);
+    json_object_object_get_ex(fields, "longitude", &longitude);
+    json_object_object_get_ex(fields, "latitude",  &latitude);
+
+    location->lat = json_object_get_double(latitude);
+    location->lon = json_object_get_double(longitude);
+
+    return OK;
 }

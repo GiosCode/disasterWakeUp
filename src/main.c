@@ -20,19 +20,30 @@ uint8_t getZipCode(const char *zipCode, latLon *location);
 
 int main(int argc, char const *argv[])
 {
-    //TODO: Extend to any location
-    //TODO: Add variable notifiaiton time (V2)
     const char *myEmail;
     const char *passwd;
     const char *phEmail;
     const char *mailServ;
     const char *zipCode;
     struct tm  *timeinfo;
+    struct tm  *prevDay;
+
     //Start time
     time_t timeRaw;
     latLon loc;
     timeRaw = time(NULL);
-    timeinfo = localtime(&timeRaw);
+    timeinfo = gmtime(&timeRaw);
+    prevDay  = gmtime(&timeRaw);
+    prevDay->tm_mday--;
+    int normDay = mktime(prevDay);
+    if(normDay == -1)
+    {
+        fprintf(stderr, "Error: Unable to make time using mktime\n");
+    }
+    //const char *earthQuakeUrl = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&";
+    char tmpQuakeUrl[200] = {'\0'};
+    memset(tmpQuakeUrl, 0x0, sizeof(tmpQuakeUrl));
+    strcat(tmpQuakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
     //     timeRaw = time(NULL);
@@ -50,19 +61,31 @@ int main(int argc, char const *argv[])
     phEmail  = argv[4];
     mailServ = argv[5];
 
+    getZipCode(zipCode, &loc);
+
     //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
-    /* TODO: Get latitude and longitude based on zipcode */
     /* TODO: Get fire data */
     /* TODO: Get earthquake data */
-    /* TODO: Get weather data */
-    if(getData("https://www.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=false","fire.json") == ERROR)
+    char quakeUrl[50] = {'\0'};
+    /* Making request string */
+    sprintf(quakeUrl,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",loc.lat,loc.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
+    strcat(tmpQuakeUrl,quakeUrl);
+    printf("Earthquake url: %s\n",tmpQuakeUrl);
+    if(getData(tmpQuakeUrl,"earthquake.json") == ERROR)
     {
-        printf("Error getting fire data\n");
+        fprintf(stderr, "Error getting earthquake data\n");
         return 0;
     }
-    getZipCode(zipCode, &loc);
+    /* TODO: Get weather data */
+    
+    if(getData("https://www.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=false","fire.json") == ERROR)
+    {
+        fprintf(stderr, "Error getting fire data\n");
+        return 0;
+    }
+    
     printf("lat %f, lon %f\n",loc.lat,loc.lon);
     makePayload(payload, myEmail, phEmail, timeinfo);
     //sendText(myEmail,passwd,phEmail,mailServ, payload);

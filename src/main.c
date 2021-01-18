@@ -40,10 +40,9 @@ int main(int argc, char const *argv[])
     {
         fprintf(stderr, "Error: Unable to make time using mktime\n");
     }
-    //const char *earthQuakeUrl = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&";
-    char tmpQuakeUrl[200] = {'\0'};
-    memset(tmpQuakeUrl, 0x0, sizeof(tmpQuakeUrl));
-    strcat(tmpQuakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");
+    char earthquakeUrl[200] = {'\0'};
+
+    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
     //     timeRaw = time(NULL);
@@ -60,26 +59,27 @@ int main(int argc, char const *argv[])
     passwd   = argv[3];
     phEmail  = argv[4];
     mailServ = argv[5];
-
+    
     getZipCode(zipCode, &loc);
 
     //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
-    /* TODO: Get fire data */
-    /* TODO: Get earthquake data */
-    char quakeUrl[50] = {'\0'};
+
+    /* Downloading earthquake data */
+    char quakeUrlParams[50] = {'\0'};
     /* Making request string */
-    sprintf(quakeUrl,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",loc.lat,loc.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
-    strcat(tmpQuakeUrl,quakeUrl);
-    printf("Earthquake url: %s\n",tmpQuakeUrl);
-    if(getData(tmpQuakeUrl,"earthquake.json") == ERROR)
+    sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",loc.lat,loc.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
+    strcat(earthquakeUrl,quakeUrlParams);
+    printf("%s\n",earthquakeUrl);
+    if(getData(earthquakeUrl,"earthquake.json") == ERROR)
     {
         fprintf(stderr, "Error getting earthquake data\n");
         return 0;
     }
     /* TODO: Get weather data */
-    
+
+    /* TODO: Get fire data */
     if(getData("https://www.fire.ca.gov/umbraco/api/IncidentApi/List?inactive=false","fire.json") == ERROR)
     {
         fprintf(stderr, "Error getting fire data\n");

@@ -17,6 +17,7 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
 uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
 uint8_t getData(char *source, const char *fileName);
 uint8_t getZipCode(const char *zipCode, latLon *location);
+uint8_t *getFireData(latLon location, struct tm  *prevDay);
 
 int main(int argc, char const *argv[])
 {
@@ -43,6 +44,7 @@ int main(int argc, char const *argv[])
     char earthquakeUrl[200] = {'\0'};
 
     strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");
+    
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
     //     timeRaw = time(NULL);
@@ -65,7 +67,8 @@ int main(int argc, char const *argv[])
     //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
-
+    loc.lat = 38.172;//TODO: Remove after debugging
+    loc.lon = -117.955;//TODO: Remove after debugging, date is 1/31/2021
     /* Downloading earthquake data */
     char quakeUrlParams[50] = {'\0'};
     /* Making request string */
@@ -78,13 +81,13 @@ int main(int argc, char const *argv[])
         return 0;
     }
     /* TODO: Get weather data */
-
+    getFireData(loc, prevDay);
     /* TODO: Get fire data */
-    if(getData("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
+    /* if(getData("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
     {
         fprintf(stderr, "Error getting fire data\n");
         return 0;
-    }
+    } */
     
     printf("lat %f, lon %f\n",loc.lat,loc.lon);
     makePayload(payload, myEmail, phEmail, timeinfo);
@@ -306,3 +309,31 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
 
     return OK;
 }
+
+uint8_t *getFireData(latLon location, struct tm  *prevDay)
+{
+    /* Build Request String */
+    const char *baseFireUrl = "https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=";
+    char *fireUrl = malloc(sizeof(uint8_t) * 1500);
+    memset(fireUrl, 0x00, (sizeof(uint8_t) * 1500));
+    strcat(fireUrl,baseFireUrl);
+    char targetDate[600] = {'\0'};
+location.lon = -80.119693;
+location.lat = 37.579;
+prevDay->tm_year = 119;
+prevDay->tm_mon = 1;
+prevDay->tm_mday = 19;
+    sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
+                        "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
+                        "AND%%20InitialLatitude%%20%%3E%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging 
+                        "AND%%20InitialLatitude%%20%%3C%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging
+                        "AND%%20InitialLongitude%%20%%3E%%3D%%20%.6f%%20"
+                        "AND%%20InitialLongitude%%20%%3C%%3D%%20%.6f", (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                    (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                    location.lat, location.lat, location.lon, location.lon);
+    strcat(fireUrl, targetDate);
+    printf("\n\n%s\n\n", fireUrl);
+    getData(fireUrl,"fire.json");
+free(fireUrl);
+}
+

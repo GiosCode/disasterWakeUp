@@ -15,9 +15,9 @@ typedef struct
 
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
 uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
-uint8_t getData(char *source, const char *fileName);
+uint8_t downloadRequest(char *source, const char *fileName);
 uint8_t getZipCode(const char *zipCode, latLon *location);
-uint8_t *getFireData(latLon location, struct tm  *prevDay);
+uint8_t getFireData(latLon location, struct tm  *prevDay);
 
 int main(int argc, char const *argv[])
 {
@@ -43,7 +43,7 @@ int main(int argc, char const *argv[])
     }
     char earthquakeUrl[200] = {'\0'};
 
-    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");
+    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");//TODO: Add min magnitude parameter
     
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
@@ -75,7 +75,7 @@ int main(int argc, char const *argv[])
     sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",loc.lat,loc.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
     strcat(earthquakeUrl,quakeUrlParams);
     printf("%s\n",earthquakeUrl);
-    if(getData(earthquakeUrl,"earthquake.json") == ERROR)
+    if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
     {
         fprintf(stderr, "Error getting earthquake data\n");
         return 0;
@@ -83,7 +83,7 @@ int main(int argc, char const *argv[])
     /* TODO: Get weather data */
     getFireData(loc, prevDay);
     /* TODO: Get fire data */
-    /* if(getData("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
+    /* if(downloadRequest("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
     {
         fprintf(stderr, "Error getting fire data\n");
         return 0;
@@ -191,7 +191,7 @@ uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, st
     return OK;
 }
 
-uint8_t getData(char *source, const char *fileName)
+uint8_t downloadRequest(char *source, const char *fileName)
 {
     CURLcode res = CURLE_OK;
     CURL *handle;
@@ -257,7 +257,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     strcat(zipLUT,zipCode);
 
     /* Download Latitude/Longitude data */
-    if (getData(zipLUT, fileName) == ERROR)
+    if (downloadRequest(zipLUT, fileName) == ERROR)
     {
         fprintf(stderr, "Failed to download Zip Code\n");
     }
@@ -310,7 +310,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     return OK;
 }
 
-uint8_t *getFireData(latLon location, struct tm  *prevDay)
+uint8_t getFireData(latLon location, struct tm  *prevDay)
 {
     /* Build Request String */
     const char *baseFireUrl = "https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=";
@@ -333,7 +333,7 @@ prevDay->tm_mday = 19;
                                                                     location.lat, location.lat, location.lon, location.lon);
     strcat(fireUrl, targetDate);
     printf("\n\n%s\n\n", fireUrl);
-    getData(fireUrl,"fire.json");
+    downloadRequest(fireUrl,"fire.json");
 free(fireUrl);
 }
 

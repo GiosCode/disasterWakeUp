@@ -18,6 +18,7 @@ uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, st
 uint8_t downloadRequest(char *source, const char *fileName);
 uint8_t getZipCode(const char *zipCode, latLon *location);
 uint8_t getFireData(latLon location, struct tm  *prevDay);
+uint8_t getWeatherAlerts(latLon location);
 
 int main(int argc, char const *argv[])
 {
@@ -69,6 +70,9 @@ int main(int argc, char const *argv[])
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
     loc.lat = 38.172;//TODO: Remove after debugging
     loc.lon = -117.955;//TODO: Remove after debugging, date is 1/31/2021
+    prevDay->tm_year = 121;
+    prevDay->tm_mon = 0;
+    prevDay->tm_mday = 31;
     /* Downloading earthquake data */
     char quakeUrlParams[50] = {'\0'};
     /* Making request string */
@@ -81,7 +85,8 @@ int main(int argc, char const *argv[])
         return 0;
     }
     /* TODO: Get weather data */
-    getFireData(loc, prevDay);
+    getFireData(loc, prevDay);//TODO: Add timer to retry if this failed
+    getWeatherAlerts(loc);//TODO: Add timer to retry if this failed
     /* TODO: Get fire data */
     /* if(downloadRequest("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
     {
@@ -218,8 +223,21 @@ uint8_t downloadRequest(char *source, const char *fileName)
         curl_easy_setopt(handle, CURLOPT_WRITEDATA, data);
         curl_easy_setopt(handle, CURLOPT_FAILONERROR, 1L); //Fail on HTTP error
 
-        //Download the json data
-        res = curl_easy_perform(handle);
+        if(strncmp(fileName, "alerts.json", 11) == 0)
+        {
+            struct curl_slist *list = NULL;
+            list = curl_slist_append(list, "accept: application/geo+json");
+            list = curl_slist_append(list, "User-Agent: (DisasterWakeUp)");
+            curl_easy_setopt(handle, CURLOPT_HTTPHEADER, list);
+            //Download the json data
+            res = curl_easy_perform(handle);
+            curl_slist_free_all(list);
+        }
+        else
+        {
+            //Download the json data
+            res = curl_easy_perform(handle);
+        }
 
         //Check download success
         if (res != CURLE_OK)
@@ -323,17 +341,48 @@ location.lat = 37.579;
 prevDay->tm_year = 119;
 prevDay->tm_mon = 1;
 prevDay->tm_mday = 19;
-    sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
-                        "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
-                        "AND%%20InitialLatitude%%20%%3E%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging 
-                        "AND%%20InitialLatitude%%20%%3C%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging
-                        "AND%%20InitialLongitude%%20%%3E%%3D%%20%.6f%%20"
-                        "AND%%20InitialLongitude%%20%%3C%%3D%%20%.6f", (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
-                                                                    (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
-                                                                    location.lat, location.lat, location.lon, location.lon);
-    strcat(fireUrl, targetDate);
-    printf("\n\n%s\n\n", fireUrl);
-    downloadRequest(fireUrl,"fire.json");
+sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
+                    "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
+                    "AND%%20InitialLatitude%%20%%3E%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging 
+                    "AND%%20InitialLatitude%%20%%3C%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging
+                    "AND%%20InitialLongitude%%20%%3E%%3D%%20%.6f%%20"
+                    "AND%%20InitialLongitude%%20%%3C%%3D%%20%.6f", (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                location.lat, location.lat, location.lon, location.lon);
+strcat(fireUrl, targetDate);
+printf("\n\n%s\n\n", fireUrl);//TODO: Remove after debugging
+
+if (downloadRequest(fireUrl,"fire.json") == ERROR)
+{
+    fprintf(stderr, "Error getting fire data\n");
+    free(fireUrl);
+    return ERROR;
+}
+
 free(fireUrl);
+return OK;
+}
+
+uint8_t getWeatherAlerts(latLon location)
+{
+    const char *baseAlertURL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert&certainty=observed&point=";
+
+    /* Build the Weather Alerts request URL */
+    char *requestUrl = malloc(sizeof(uint8_t) * 121);
+    memset(requestUrl, 0x00, (sizeof(uint8_t) * 121));
+    strcat(requestUrl, baseAlertURL);
+    char parameters[24] = {'\0'};
+    sprintf(parameters, "%.6f%%2C%.6f", location.lat, location.lon);
+    strcat(requestUrl, parameters);
+    
+    if (downloadRequest(requestUrl, "alerts.json") == ERROR)
+    {
+        return ERROR;
+        fprintf(stderr, "Error getting weather alerts data\n");
+        free(requestUrl);
+    }
+
+    free(requestUrl);
+    return OK;
 }
 

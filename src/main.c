@@ -361,31 +361,7 @@ if (downloadRequest(fireUrl,"fire.json") == ERROR)
 free(fireUrl);
 
 /* Extract Data */
-
-return OK;
-}
-
-uint8_t getWeatherAlerts(latLon location)
-{
-    const char *baseAlertURL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert&certainty=observed&point=";
-
-    /* Build the Weather Alerts request URL */
-    char *requestUrl = malloc(sizeof(uint8_t) * 121);
-    memset(requestUrl, 0x00, (sizeof(uint8_t) * 121));
-    strcat(requestUrl, baseAlertURL);
-    char parameters[24] = {'\0'};
-    sprintf(parameters, "%.6f%%2C%.6f", location.lat, location.lon);
-    strcat(requestUrl, parameters);
-    
-    if (downloadRequest(requestUrl, "alerts.json") == ERROR)
-    {
-        return ERROR;
-        fprintf(stderr, "Error getting weather alerts data\n");
-        free(requestUrl);
-    }
-    free(requestUrl);
-
-    FILE *fp;
+FILE *fp;
     struct stat filestatus;
     const char *fileName = "fire.json";
     char *buffer;
@@ -450,6 +426,31 @@ uint8_t getWeatherAlerts(latLon location)
             printf("%s\n",json_object_get_string(tmpName));
         }
     }
+
+return OK;
+}
+
+uint8_t getWeatherAlerts(latLon location)
+{
+    const char *baseAlertURL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert&certainty=observed&point=";
+
+    /* Build the Weather Alerts request URL */
+    char *requestUrl = malloc(sizeof(uint8_t) * 121);
+    memset(requestUrl, 0x00, (sizeof(uint8_t) * 121));
+    strcat(requestUrl, baseAlertURL);
+    char parameters[24] = {'\0'};
+    sprintf(parameters, "%.6f%%2C%.6f", location.lat, location.lon);
+    strcat(requestUrl, parameters);
+    
+    if (downloadRequest(requestUrl, "alerts.json") == ERROR)
+    {
+        return ERROR;
+        fprintf(stderr, "Error getting weather alerts data\n");
+        free(requestUrl);
+    }
+    free(requestUrl);
+
+    /* Extract Data */
     
     return OK;
 }

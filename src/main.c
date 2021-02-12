@@ -451,6 +451,73 @@ uint8_t getWeatherAlerts(latLon location)
     free(requestUrl);
 
     /* Extract Data */
+    printf("\nON WEATHER\n");
+    FILE *fp;
+    struct stat filestatus;
+    const char *fileName = "alerts.json";
+    char *buffer;
+    struct json_object *jsonParsed;
+    struct json_object *data;
+    struct json_object *element;
+    struct json_object *props;
+    struct json_object *tmpName;
+
+    /* Get file information */
+    if (stat(fileName, &filestatus) != 0) 
+    {
+            fprintf(stderr, "File %s not found\n", fileName);
+            return ERROR;
+    }
+    /* Dynamically allocate buffer size based on file size */
+    buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
+    memset(buffer, 0, filestatus.st_size + 1);
+    if(buffer == NULL)
+    {
+        fprintf(stderr, "Malloc error: Unable to allocate %ld bytes\n", filestatus.st_size);
+        return ERROR;
+    }
+    /* Open and read file contents to buffer */
+    fp = fopen(fileName, "rb");
+    if(fp == NULL)
+    {
+        fprintf(stderr, "Failed to open %s\n", fileName);
+        fclose(fp);
+        free(buffer);
+        return ERROR;
+    }
+    if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
+    {
+        fprintf(stderr, "Failed to read %s", fileName);
+        free(buffer);
+        fclose(fp);
+        return ERROR;
+    }
+    fclose(fp);
+    /* Parse JSON file for location values */
+    jsonParsed = json_tokener_parse(buffer);
+    free(buffer);
+
+    json_object_object_get_ex(jsonParsed, "features", &data);
+    size_t arrayLen = json_object_array_length(data);
+
+    for (size_t i = 0; i < arrayLen; i++)
+    {
+        element = json_object_array_get_idx(data, i);
+
+        if(element == NULL)
+        {
+            printf("\nERROR\n");
+            continue;
+        }
+        if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
+        {
+            if(json_object_object_get_ex(props, "headline", &tmpName) == FALSE)
+            {
+                continue;
+            }
+            printf("%s\n",json_object_get_string(tmpName));
+        }
+    }
     
     return OK;
 }

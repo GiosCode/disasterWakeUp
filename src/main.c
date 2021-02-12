@@ -95,7 +95,7 @@ int main(int argc, char const *argv[])
     } */
     
     printf("lat %f, lon %f\n",loc.lat,loc.lon);
-    makePayload(payload, myEmail, phEmail, timeinfo);
+    //makePayload(payload, myEmail, phEmail, timeinfo);
     //sendText(myEmail,passwd,phEmail,mailServ, payload);
 
     return 0;
@@ -406,6 +406,10 @@ FILE *fp;
     jsonParsed = json_tokener_parse(buffer);
     free(buffer);
     
+    FILE *pl;
+
+    pl = fopen("payload.txt","a");
+
     json_object_object_get_ex(jsonParsed, "features", &data);
     size_t arrayLen = json_object_array_length(data);
     for (size_t i = 0; i < arrayLen; i++)
@@ -423,9 +427,13 @@ FILE *fp;
             {
                 continue;
             }
-            printf("%s\n",json_object_get_string(tmpName));
+            fprintf(pl,"%s\n",json_object_get_string(tmpName));
         }
     }
+    fclose(pl);
+    /* Writting to payload */
+
+
 
 return OK;
 }
@@ -500,6 +508,10 @@ uint8_t getWeatherAlerts(latLon location)
     json_object_object_get_ex(jsonParsed, "features", &data);
     size_t arrayLen = json_object_array_length(data);
 
+    FILE *pl;
+
+    pl = fopen("payload.txt","a");
+    fprintf(pl,"\n+++++++++++++++WEATHER+++++++++++++++\n");
     for (size_t i = 0; i < arrayLen; i++)
     {
         element = json_object_array_get_idx(data, i);
@@ -515,10 +527,10 @@ uint8_t getWeatherAlerts(latLon location)
             {
                 continue;
             }
-            printf("%s\n",json_object_get_string(tmpName));
+            fprintf(pl,"%s\n",json_object_get_string(tmpName));
         }
     }
-    
+    fclose(pl);
     return OK;
 }
 

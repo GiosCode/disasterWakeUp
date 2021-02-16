@@ -14,11 +14,12 @@ typedef struct
 } latLon;
 
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
-uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
+uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
 uint8_t downloadRequest(char *source, const char *fileName);
 uint8_t getZipCode(const char *zipCode, latLon *location);
 uint8_t getFireData(latLon location, struct tm  *prevDay);
 uint8_t getWeatherAlerts(latLon location);
+uint8_t getQuakeData(latLon location, struct tm  *prevDay);
 
 int main(int argc, char const *argv[])
 {
@@ -42,10 +43,6 @@ int main(int argc, char const *argv[])
     {
         fprintf(stderr, "Error: Unable to make time using mktime\n");
     }
-    char earthquakeUrl[200] = {'\0'};
-
-    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");//TODO: Add min magnitude parameter
-    
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
     //     timeRaw = time(NULL);
@@ -73,29 +70,16 @@ int main(int argc, char const *argv[])
     prevDay->tm_year = 121;
     prevDay->tm_mon = 0;
     prevDay->tm_mday = 31;
-    /* Downloading earthquake data */
-    char quakeUrlParams[50] = {'\0'};
-    /* Making request string */
-    sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",loc.lat,loc.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
-    strcat(earthquakeUrl,quakeUrlParams);
-    printf("%s\n",earthquakeUrl);
-    if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
-    {
-        fprintf(stderr, "Error getting earthquake data\n");
-        return 0;
-    }
-    /* TODO: Get weather data */
-    getFireData(loc, prevDay);//TODO: Add timer to retry if this failed
+    /* Delete payload file and rebuild header */
+    buildPayloadHeader(payload, myEmail, phEmail, timeinfo);
+    /* TODO: Get earthquake data */
+    getQuakeData(loc, prevDay);
+    /* TODO: Get weather data */ 
     getWeatherAlerts(loc);//TODO: Add timer to retry if this failed
     /* TODO: Get fire data */
-    /* if(downloadRequest("https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=FireDiscoveryDateTime%20%3E%3D%20TIMESTAMP%20%272019-02-19%2000%3A00%3A00%27%20AND%20FireDiscoveryDateTime%20%3C%3D%20TIMESTAMP%20%272019-02-19%2023%3A59%3A59%27%20AND%20InitialLatitude%20%3E%3D%2037.579%20AND%20InitialLatitude%20%3C%3D%2037.579%20AND%20InitialLongitude%20%3E%3D%20-80.119693%20AND%20InitialLongitude%20%3C%3D%20-80.119693","fire.json") == ERROR)
-    {
-        fprintf(stderr, "Error getting fire data\n");
-        return 0;
-    } */
-    
+    getFireData(loc, prevDay);//TODO: Add timer to retry if this failed
     printf("lat %f, lon %f\n",loc.lat,loc.lon);
-    //makePayload(payload, myEmail, phEmail, timeinfo);
+    /* Send payload */
     //sendText(myEmail,passwd,phEmail,mailServ, payload);
 
     return 0;
@@ -179,21 +163,19 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     return ERROR;
 }
 
-uint8_t makePayload(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time)
-{//TODO: FInish function with proper payload
+uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time)
+{
     payload = fopen("payload.txt", "w+");
 
     if (payload != NULL)
     {
-    
         //Add Email Header
         fprintf(payload, "From: DisasterWakeup <%s>\nTo: Me <%s>\nSubject: %s\n", email, phoneEmail, asctime(time));
-        //Email Payload
-        fprintf(payload,"\nPayload Here");
         fclose(payload);
+        return OK;
     }
-
-    return OK;
+    
+    return ERROR;
 }
 
 uint8_t downloadRequest(char *source, const char *fileName)
@@ -409,7 +391,13 @@ FILE *fp;
     FILE *pl;
 
     pl = fopen("payload.txt","a");
-
+    if (pl == NULL)
+    {
+        fprintf(stderr,"Failed to open payload in fires\n");
+        return ERROR;
+    }
+    
+    fprintf(pl,"\n===Fires===\n");
     json_object_object_get_ex(jsonParsed, "features", &data);
     size_t arrayLen = json_object_array_length(data);
     for (size_t i = 0; i < arrayLen; i++)
@@ -418,16 +406,30 @@ FILE *fp;
 
         if(element == NULL)
         {
-            printf("\nERROR\n");
+            fprintf(stderr, "Error getting element in fire\n");
             continue;
         }
         if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
         {
             if(json_object_object_get_ex(props, "IncidentName", &tmpName) == FALSE)
             {
-                continue;
+                fprintf(pl, "Name: NoName\n");
             }
-            fprintf(pl,"%s\n",json_object_get_string(tmpName));
+            else
+            {
+                fprintf(pl, "Name: %s\n",json_object_get_string(tmpName));
+            }
+            //TODO the incident and incidentname always exist, they will just have nulls. If I want to check for null I need to check the data inside tmpName
+            if(json_object_object_get_ex(props, "IncidentShortDescription", &tmpName) == FALSE)
+            {
+                fprintf(pl, "Description: NoDesc\n");
+            }
+            else
+            {
+                fprintf(pl, "Description: %s\n",json_object_get_string(tmpName));
+            }
+            
+
         }
     }
     fclose(pl);
@@ -459,7 +461,6 @@ uint8_t getWeatherAlerts(latLon location)
     free(requestUrl);
 
     /* Extract Data */
-    printf("\nON WEATHER\n");
     FILE *fp;
     struct stat filestatus;
     const char *fileName = "alerts.json";
@@ -511,7 +512,7 @@ uint8_t getWeatherAlerts(latLon location)
     FILE *pl;
 
     pl = fopen("payload.txt","a");
-    fprintf(pl,"\n+++++++++++++++WEATHER+++++++++++++++\n");
+    fprintf(pl,"\n===Weather Alerts===\n");
     for (size_t i = 0; i < arrayLen; i++)
     {
         element = json_object_array_get_idx(data, i);
@@ -534,3 +535,23 @@ uint8_t getWeatherAlerts(latLon location)
     return OK;
 }
 
+uint8_t getQuakeData(latLon location, struct tm  *prevDay)
+{
+    char earthquakeUrl[200] = {'\0'};
+
+    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");//TODO: Add min magnitude parameter
+
+    /* Downloading earthquake data */
+    char quakeUrlParams[50] = {'\0'};
+    /* Making request string */
+    sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",location.lat,location.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
+    strcat(earthquakeUrl,quakeUrlParams);
+    printf("%s\n",earthquakeUrl);
+    if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
+    {
+        fprintf(stderr, "Error getting earthquake data\n");
+        return ERROR;
+    }
+
+    return OK;
+}

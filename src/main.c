@@ -20,7 +20,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location);
 uint8_t getFireData(latLon location, struct tm  *prevDay);
 uint8_t getWeatherAlerts(latLon location);
 uint8_t getQuakeData(latLon location, struct tm  *prevDay);
-
+uint8_t extractData(const uint8_t *fileName);
 int main(int argc, char const *argv[])
 {
     const char *myEmail;
@@ -80,7 +80,7 @@ int main(int argc, char const *argv[])
     getFireData(loc, prevDay);//TODO: Add timer to retry if this failed
     printf("lat %f, lon %f\n",loc.lat,loc.lon);
     /* Send payload */
-    //sendText(myEmail,passwd,phEmail,mailServ, payload);
+    sendText(myEmail,passwd,phEmail,mailServ, payload);
 
     return 0;
 }
@@ -342,102 +342,8 @@ if (downloadRequest(fireUrl,"fire.json") == ERROR)
 }
 free(fireUrl);
 
-/* Extract Data */
-FILE *fp;
-    struct stat filestatus;
-    const char *fileName = "fire.json";
-    char *buffer;
-    struct json_object *jsonParsed;
-    struct json_object *data;
-    struct json_object *element;
-    struct json_object *props;
-    struct json_object *tmpName;
-
-    /* Get file information */
-    if (stat(fileName, &filestatus) != 0) 
-    {
-            fprintf(stderr, "File %s not found\n", fileName);
-            return ERROR;
-    }
-    /* Dynamically allocate buffer size based on file size */
-    buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
-    memset(buffer, 0, filestatus.st_size + 1);
-    if(buffer == NULL)
-    {
-        fprintf(stderr, "Malloc error: Unable to allocate %ld bytes\n", filestatus.st_size);
-        return ERROR;
-    }
-    /* Open and read file contents to buffer */
-    fp = fopen(fileName, "rb");
-    if(fp == NULL)
-    {
-        fprintf(stderr, "Failed to open %s\n", fileName);
-        fclose(fp);
-        free(buffer);
-        return ERROR;
-    }
-    if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
-    {
-        fprintf(stderr, "Failed to read %s", fileName);
-        free(buffer);
-        fclose(fp);
-        return ERROR;
-    }
-    fclose(fp);
-    /* Parse JSON file for location values */
-    jsonParsed = json_tokener_parse(buffer);
-    free(buffer);
-    
-    FILE *pl;
-
-    pl = fopen("payload.txt","a");
-    if (pl == NULL)
-    {
-        fprintf(stderr,"Failed to open payload in fires\n");
-        return ERROR;
-    }
-    
-    fprintf(pl,"\n===Fires===\n");
-    json_object_object_get_ex(jsonParsed, "features", &data);
-    size_t arrayLen = json_object_array_length(data);
-    for (size_t i = 0; i < arrayLen; i++)
-    {
-        element = json_object_array_get_idx(data, i);
-
-        if(element == NULL)
-        {
-            fprintf(stderr, "Error getting element in fire\n");
-            continue;
-        }
-        if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
-        {
-            if(json_object_object_get_ex(props, "IncidentName", &tmpName) == FALSE)
-            {
-                fprintf(pl, "Name: NoName\n");
-            }
-            else
-            {
-                fprintf(pl, "Name: %s\n",json_object_get_string(tmpName));
-            }
-            //TODO the incident and incidentname always exist, they will just have nulls. If I want to check for null I need to check the data inside tmpName
-            if(json_object_object_get_ex(props, "IncidentShortDescription", &tmpName) == FALSE)
-            {
-                fprintf(pl, "Description: NoDesc\n");
-            }
-            else
-            {
-                fprintf(pl, "Description: %s\n",json_object_get_string(tmpName));
-            }
-            
-
-        }
-    }
-    fclose(pl);
-    /* Writting to payload */
-
-
-
-return OK;
+    extractData("fire.json");
+    return OK;
 }
 
 uint8_t getWeatherAlerts(latLon location)
@@ -460,10 +366,37 @@ uint8_t getWeatherAlerts(latLon location)
     }
     free(requestUrl);
 
+    extractData("alerts.json");
+    return OK;
+}
+
+uint8_t getQuakeData(latLon location, struct tm  *prevDay)
+{
+    char earthquakeUrl[250] = {'\0'};
+
+    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&minmagnitude=2.5&");
+
+    /* Downloading earthquake data */
+    char quakeUrlParams[50] = {'\0'};
+    /* Making request string */
+    sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",location.lat,location.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
+    strcat(earthquakeUrl,quakeUrlParams);
+    printf("%s\n",earthquakeUrl);
+    if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
+    {
+        fprintf(stderr, "Error getting earthquake data\n");
+        return ERROR;
+    }
+
+    extractData("earthquake.json");
+    return OK;
+}
+
+uint8_t extractData(const uint8_t *fileName)
+{
     /* Extract Data */
     FILE *fp;
     struct stat filestatus;
-    const char *fileName = "alerts.json";
     char *buffer;
     struct json_object *jsonParsed;
     struct json_object *data;
@@ -510,48 +443,98 @@ uint8_t getWeatherAlerts(latLon location)
     size_t arrayLen = json_object_array_length(data);
 
     FILE *pl;
-
     pl = fopen("payload.txt","a");
-    fprintf(pl,"\n===Weather Alerts===\n");
-    for (size_t i = 0; i < arrayLen; i++)
+    
+    if (strcmp(fileName, "fire.json") == 0)
     {
-        element = json_object_array_get_idx(data, i);
+        fprintf(pl,"\n===Fires===\n");
+        for (size_t i = 0; i < arrayLen; i++)
+        {
+            element = json_object_array_get_idx(data, i);
 
-        if(element == NULL)
-        {
-            printf("\nERROR\n");
-            continue;
-        }
-        if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
-        {
-            if(json_object_object_get_ex(props, "headline", &tmpName) == FALSE)
+            if(element == NULL)
             {
+                fprintf(stderr, "Error getting element in fire\n");
                 continue;
             }
-            fprintf(pl,"%s\n",json_object_get_string(tmpName));
+            if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
+            {
+                if(json_object_object_get_ex(props, "IncidentName", &tmpName) == FALSE)
+                {
+                    fprintf(pl, "Name: NoName\n");
+                }
+                else
+                {
+                    fprintf(pl, "Name: %s\n",json_object_get_string(tmpName));
+                }
+                //TODO the incident and incidentname always exist, they will just have nulls. If I want to check for null I need to check the data inside tmpName
+                if(json_object_object_get_ex(props, "IncidentShortDescription", &tmpName) == FALSE)
+                {
+                    fprintf(pl, "Description: NoDesc\n");
+                }
+                else
+                {
+                    fprintf(pl, "Description: %s\n",json_object_get_string(tmpName));
+                }
+                
+            }
         }
+        fclose(pl);
+        return OK;
     }
-    fclose(pl);
-    return OK;
-}
-
-uint8_t getQuakeData(latLon location, struct tm  *prevDay)
-{
-    char earthquakeUrl[200] = {'\0'};
-
-    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&");//TODO: Add min magnitude parameter
-
-    /* Downloading earthquake data */
-    char quakeUrlParams[50] = {'\0'};
-    /* Making request string */
-    sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",location.lat,location.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
-    strcat(earthquakeUrl,quakeUrlParams);
-    printf("%s\n",earthquakeUrl);
-    if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
+    else if (strcmp(fileName, "earthquake.json") == 0)
     {
-        fprintf(stderr, "Error getting earthquake data\n");
+        fprintf(pl,"\n===Earthquake(s)===\n");
+        for (size_t i = 0; i < arrayLen; i++)
+        {
+            element = json_object_array_get_idx(data, i);
+
+            if(element == NULL)
+            {
+                printf("\nERROR\n");
+                continue;
+            }
+            if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
+            {
+                if(json_object_object_get_ex(props, "title", &tmpName) == FALSE)
+                {
+                    continue;
+                }
+                fprintf(pl,"%s\n",json_object_get_string(tmpName));
+            }
+        }
+        fclose(pl);
+        return OK;
+    }
+    else if (strcmp(fileName, "alerts.json") == 0)
+    {
+        fprintf(pl,"\n===Weather Alerts===\n");
+        for (size_t i = 0; i < arrayLen; i++)
+        {
+            element = json_object_array_get_idx(data, i);
+
+            if(element == NULL)
+            {
+                printf("\nERROR\n");
+                continue;
+            }
+            if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
+            {
+                if(json_object_object_get_ex(props, "headline", &tmpName) == FALSE)
+                {
+                    continue;
+                }
+                fprintf(pl,"%s\n",json_object_get_string(tmpName));
+            }
+        }
+        fclose(pl);
+        return OK;
+    }
+    else
+    {
+        fclose(pl);
         return ERROR;
     }
 
-    return OK;
+    return ERROR;
 }

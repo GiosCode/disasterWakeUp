@@ -13,6 +13,7 @@ typedef struct
     double lon;
 } latLon;
 
+/* Local functions */
 uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
 uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
 uint8_t downloadRequest(char *source, const char *fileName);
@@ -21,6 +22,7 @@ uint8_t getFireData(latLon location, struct tm  *prevDay);
 uint8_t getWeatherAlerts(latLon location);
 uint8_t getQuakeData(latLon location, struct tm  *prevDay);
 uint8_t extractData(const uint8_t *fileName);
+
 int main(int argc, char const *argv[])
 {
     const char *myEmail;
@@ -38,11 +40,11 @@ int main(int argc, char const *argv[])
     timeinfo = gmtime(&timeRaw);
     prevDay  = gmtime(&timeRaw);
     prevDay->tm_mday--;
-    int normDay = mktime(prevDay);
-    if(normDay == -1)
-    {
-        fprintf(stderr, "Error: Unable to make time using mktime\n");
-    }
+//    int normDay = mktime(prevDay);
+//    if(normDay == -1)
+//    {
+//        fprintf(stderr, "Error: Unable to make time using mktime\n");
+//    }
     // while (1)
     // {//TODO: Sleep until the desired time rather than constantly checking
     //     timeRaw = time(NULL);
@@ -60,29 +62,46 @@ int main(int argc, char const *argv[])
     phEmail  = argv[4];
     mailServ = argv[5];
     
-    getZipCode(zipCode, &loc);
+    if(getZipCode(zipCode, &loc) == ERROR)
+    {
+        fprintf(stderr, "ERROR: Failed to get zipcode");
+        return ERROR;
+    }
 
     //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
-    loc.lat = 38.172;//TODO: Remove after debugging
-    loc.lon = -117.955;//TODO: Remove after debugging, date is 1/31/2021
-    prevDay->tm_year = 121;
-    prevDay->tm_mon = 0;
-    prevDay->tm_mday = 31;
     /* Delete payload file and rebuild header */
-    buildPayloadHeader(payload, myEmail, phEmail, timeinfo);
-    /* TODO: Get earthquake data */
-    getQuakeData(loc, prevDay);
-    /* TODO: Get weather data */ 
-    getWeatherAlerts(loc);//TODO: Add timer to retry if this failed
-    /* TODO: Get fire data */
-    getFireData(loc, prevDay);//TODO: Add timer to retry if this failed
-    printf("lat %f, lon %f\n",loc.lat,loc.lon);
+    if(buildPayloadHeader(payload, myEmail, phEmail, timeinfo) == ERROR)
+    {
+        fprintf(stderr, "ERROR: Failed to build payload header");
+        return ERROR;
+    }
+    /* Get earthquake data */
+    if(getQuakeData(loc, prevDay) == ERROR)
+    {
+        fprintf(stderr, "ERROR; Failed to get earthquake data");
+        return ERROR;
+    }
+    /* Get weather data */ 
+    if(getWeatherAlerts(loc) == ERROR)
+    {
+        fprintf(stderr, "ERROR: Failed to get weather alerts");
+        return ERROR;
+    }
+    /* Get fire data */
+    if(getFireData(loc, prevDay) == ERROR)
+    {
+        fprintf(stderr, "ERROR: Failed to get fire data");
+    }
     /* Send payload */
-    sendText(myEmail,passwd,phEmail,mailServ, payload);
+    if(sendText(myEmail,passwd,phEmail,mailServ, payload) == ERROR)
+    {
+        fprintf(stderr, "ERRPR: Failed to send payload");
+        return ERROR;
+    }
 
-    return 0;
+    return OK;
 }
 
 /*
@@ -297,13 +316,17 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     /* Parse JSON file for location values */
     jsonParsed = json_tokener_parse(buffer);
     free(buffer);
-    //TODO: Clean up these calls to be more concise
-    json_object_object_get_ex(jsonParsed, "records", &records);
+    /* Extracting longitude and latitude */
+    if(json_object_object_get_ex(jsonParsed, "records", &records) == FALSE)
+    {
+        fprintf(stderr, "Error with long/lat file data extraction\n");
+        return ERROR;
+    }
     data = json_object_array_get_idx(records, 0);
     json_object_object_get_ex(data,   "fields",    &fields);
     json_object_object_get_ex(fields, "longitude", &longitude);
     json_object_object_get_ex(fields, "latitude",  &latitude);
-
+    /*Assigning coordinates */
     location->lat = json_object_get_double(latitude);
     location->lon = json_object_get_double(longitude);
 
@@ -318,31 +341,29 @@ uint8_t getFireData(latLon location, struct tm  *prevDay)
     memset(fireUrl, 0x00, (sizeof(uint8_t) * 1500));
     strcat(fireUrl,baseFireUrl);
     char targetDate[600] = {'\0'};
-location.lon = -80.119693;
-location.lat = 37.579;
-prevDay->tm_year = 119;
-prevDay->tm_mon = 1;
-prevDay->tm_mday = 19;
-sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
-                    "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
-                    "AND%%20InitialLatitude%%20%%3E%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging 
-                    "AND%%20InitialLatitude%%20%%3C%%3D%%20%.3f%%20"//TODO: Change back to .6f after debuging
-                    "AND%%20InitialLongitude%%20%%3E%%3D%%20%.6f%%20"
-                    "AND%%20InitialLongitude%%20%%3C%%3D%%20%.6f", (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
-                                                                (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
-                                                                location.lat, location.lat, location.lon, location.lon);
-strcat(fireUrl, targetDate);
-printf("\n\n%s\n\n", fireUrl);//TODO: Remove after debugging
-
-if (downloadRequest(fireUrl,"fire.json") == ERROR)
-{
-    fprintf(stderr, "Error getting fire data\n");
+    sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
+                        "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
+                        "AND%%20InitialLatitude%%20%%3E%%3D%%20%.6f%%20"
+                        "AND%%20InitialLatitude%%20%%3C%%3D%%20%.6f%%20"
+                        "AND%%20InitialLongitude%%20%%3E%%3D%%20%.6f%%20"
+                        "AND%%20InitialLongitude%%20%%3C%%3D%%20%.6f", (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                    (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday,
+                                                                    location.lat, location.lat, location.lon, location.lon);
+    strcat(fireUrl, targetDate);
+    /* Download fire data */
+    if (downloadRequest(fireUrl,"fire.json") == ERROR)
+    {
+        fprintf(stderr, "Error getting fire data\n");
+        free(fireUrl);
+        return ERROR;
+    }
     free(fireUrl);
-    return ERROR;
-}
-free(fireUrl);
-
-    extractData("fire.json");
+    /* Extracting fire data and adding to payload */
+    if(extractData("fire.json") == ERROR)
+    {
+        fprintf(stderr, "Error extracting fire data");
+        return ERROR;
+    }
     return OK;
 }
 
@@ -360,35 +381,40 @@ uint8_t getWeatherAlerts(latLon location)
     
     if (downloadRequest(requestUrl, "alerts.json") == ERROR)
     {
-        return ERROR;
         fprintf(stderr, "Error getting weather alerts data\n");
         free(requestUrl);
+        return ERROR;
     }
     free(requestUrl);
-
-    extractData("alerts.json");
+    /* Extract data from file and add to payload */
+    if(extractData("alerts.json") == ERROR)
+    {
+        fprintf(stderr, "Error extracting weather alert data\n");
+        return ERROR;
+    }
     return OK;
 }
 
 uint8_t getQuakeData(latLon location, struct tm  *prevDay)
 {
-    char earthquakeUrl[250] = {'\0'};
-
-    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&minmagnitude=2.5&");
-
-    /* Downloading earthquake data */
-    char quakeUrlParams[50] = {'\0'};
     /* Making request string */
+    char earthquakeUrl[250] = {'\0'};
+    strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&minmagnitude=2.5&");
+    char quakeUrlParams[50] = {'\0'};
     sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",location.lat,location.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
     strcat(earthquakeUrl,quakeUrlParams);
-    printf("%s\n",earthquakeUrl);
+    /* Download earthquake data */
     if(downloadRequest(earthquakeUrl,"earthquake.json") == ERROR)
     {
         fprintf(stderr, "Error getting earthquake data\n");
         return ERROR;
     }
-
-    extractData("earthquake.json");
+    /* Extract data from file and add to payload */
+    if(extractData("earthquake.json") == ERROR)
+    {
+        fprintf(stderr, "Error extracting earthquake data\n");
+        return ERROR;
+    }
     return OK;
 }
 
@@ -439,12 +465,27 @@ uint8_t extractData(const uint8_t *fileName)
     jsonParsed = json_tokener_parse(buffer);
     free(buffer);
 
-    json_object_object_get_ex(jsonParsed, "features", &data);
-    size_t arrayLen = json_object_array_length(data);
-
     FILE *pl;
     pl = fopen("payload.txt","a");
     
+    if(pl == NULL)
+    {
+        fprintf(stderr, "Failed to open payload\n");
+        return ERROR;
+    }
+
+    /* Attempt to get features array, if missing then we are requesting
+     * fire information and there is none.
+     */
+    if((json_object_object_get_ex(jsonParsed, "features", &data) == FALSE) && (strcmp(fileName, "fire.json") == 0))
+    {
+        fprintf(pl,"\n===Fires===\n");
+        fclose(pl);
+        return OK;
+    }
+
+    size_t arrayLen = json_object_array_length(data);
+
     if (strcmp(fileName, "fire.json") == 0)
     {
         fprintf(pl,"\n===Fires===\n");
@@ -461,16 +502,17 @@ uint8_t extractData(const uint8_t *fileName)
             {
                 if(json_object_object_get_ex(props, "IncidentName", &tmpName) == FALSE)
                 {
-                    fprintf(pl, "Name: NoName\n");
+                    fprintf(stderr, "IncidentName doesn't exist\n");
+                    continue;
                 }
                 else
                 {
                     fprintf(pl, "Name: %s\n",json_object_get_string(tmpName));
                 }
-                //TODO the incident and incidentname always exist, they will just have nulls. If I want to check for null I need to check the data inside tmpName
                 if(json_object_object_get_ex(props, "IncidentShortDescription", &tmpName) == FALSE)
                 {
-                    fprintf(pl, "Description: NoDesc\n");
+                    fprintf(stderr, "IncidentShortDescription doesn't exist\n");
+                    continue;
                 }
                 else
                 {
@@ -491,16 +533,21 @@ uint8_t extractData(const uint8_t *fileName)
 
             if(element == NULL)
             {
-                printf("\nERROR\n");
+                fprintf(stderr,"Earthquake element not found\n");
                 continue;
             }
             if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
             {
                 if(json_object_object_get_ex(props, "title", &tmpName) == FALSE)
                 {
+                    fprintf(stderr, "Earthquake title doesn't exist\n");
                     continue;
                 }
-                fprintf(pl,"%s\n",json_object_get_string(tmpName));
+                else
+                {
+                    fprintf(pl,"%s\n",json_object_get_string(tmpName));
+                }
+                
             }
         }
         fclose(pl);
@@ -515,16 +562,20 @@ uint8_t extractData(const uint8_t *fileName)
 
             if(element == NULL)
             {
-                printf("\nERROR\n");
+                fprintf(stderr, "Weather element not found\n");
                 continue;
             }
             if (json_object_object_get_ex(element, "properties",  &props) == TRUE)
             {
                 if(json_object_object_get_ex(props, "headline", &tmpName) == FALSE)
                 {
+                    fprintf(stderr, "Weather alert headline doesn't exist\n");
                     continue;
                 }
-                fprintf(pl,"%s\n",json_object_get_string(tmpName));
+                else
+                {
+                    fprintf(pl,"%s\n",json_object_get_string(tmpName));
+                }  
             }
         }
         fclose(pl);
@@ -533,6 +584,7 @@ uint8_t extractData(const uint8_t *fileName)
     else
     {
         fclose(pl);
+        fprintf(stderr, "File %s doesn't exist\n", fileName);
         return ERROR;
     }
 

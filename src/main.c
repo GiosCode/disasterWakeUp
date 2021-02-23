@@ -1,11 +1,15 @@
 #include <stdio.h>
-#include "global.h"
-#include <curl/curl.h>
+#include <curl/curl.h>   /* Curl requests     */
 #include <string.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <stdlib.h>
-#include <json-c/json.h>
+#include <json-c/json.h> /* JSON parsing      */
+#include <stdint.h>      /* Fixed Width Types */
+
+/*Return Values*/
+#define ERROR (-1)
+#define OK (1)
 
 typedef struct
 {
@@ -14,22 +18,22 @@ typedef struct
 } latLon;
 
 /* Local functions */
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload);
-uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time);
-uint8_t downloadRequest(char *source, const char *fileName);
-uint8_t getZipCode(const char *zipCode, latLon *location);
+uint8_t sendText(uint8_t const *email, uint8_t const *password, uint8_t const *phoneEmail, uint8_t const *mailServer, FILE *payload);
+uint8_t buildPayloadHeader(FILE *payload, const uint8_t *email, const uint8_t *phoneEmail, struct tm  *time);
+uint8_t downloadRequest(uint8_t *source, const uint8_t *fileName);
+uint8_t getZipCode(const uint8_t *zipCode, latLon *location);
 uint8_t getFireData(latLon location, struct tm  *prevDay);
 uint8_t getWeatherAlerts(latLon location);
 uint8_t getQuakeData(latLon location, struct tm  *prevDay);
 uint8_t extractData(const uint8_t *fileName);
 
-int main(int argc, char const *argv[])
+int main(int argc, uint8_t const *argv[])
 {
-    const char *myEmail;
-    const char *passwd;
-    const char *phEmail;
-    const char *mailServ;
-    const char *zipCode;
+    const uint8_t *myEmail;
+    const uint8_t *passwd;
+    const uint8_t *phEmail;
+    const uint8_t *mailServ;
+    const uint8_t *zipCode;
     struct tm  *timeinfo;
     struct tm  *prevDay;
 
@@ -39,22 +43,13 @@ int main(int argc, char const *argv[])
     timeRaw = time(NULL);
     timeinfo = gmtime(&timeRaw);
     prevDay  = gmtime(&timeRaw);
+    /* Subtract day */
     prevDay->tm_mday--;
-//    int normDay = mktime(prevDay);
-//    if(normDay == -1)
-//    {
-//        fprintf(stderr, "Error: Unable to make time using mktime\n");
-//    }
-    // while (1)
-    // {//TODO: Sleep until the desired time rather than constantly checking
-    //     timeRaw = time(NULL);
-    //     timeinfo = localtime(&timeRaw);
-    //     if ((timeinfo->tm_hour == 15)&&(timeinfo->tm_min == 40))
-    //     {
-    //         printf("The local time is %s\n", asctime(timeinfo));
-    //         break;
-    //     }
-    // }
+    int normDay = mktime(prevDay);
+    if(normDay == -1)
+    {
+        fprintf(stderr, "Error: Unable to make time using mktime\n");
+    }
     //Format "zipCode senderEmail "senderEmailPassword" PhoneEmail MailServer"
     zipCode  = argv[1];
     myEmail  = argv[2];
@@ -68,7 +63,6 @@ int main(int argc, char const *argv[])
         return ERROR;
     }
 
-    //TODO: Need to verify they pass in a valid values
     FILE *payload;
     printf("Getting information for:\nZipCode: %s\nEmail: %s\nPassword: %s\nPhoneEmail: %s\nmailServer: %s\n", zipCode, myEmail, passwd, phEmail, mailServ);
     /* Delete payload file and rebuild header */
@@ -97,7 +91,7 @@ int main(int argc, char const *argv[])
     /* Send payload */
     if(sendText(myEmail,passwd,phEmail,mailServ, payload) == ERROR)
     {
-        fprintf(stderr, "ERRPR: Failed to send payload");
+        fprintf(stderr, "ERROR: Failed to send payload");
         return ERROR;
     }
 
@@ -107,16 +101,16 @@ int main(int argc, char const *argv[])
 /*
  * Name: sendtext 
  * Parameters:
- *  - char const *email     : User's email, where the email will be sent from.
- *  - char const *password  : Password for the "email" parameter. (If two factor is activated user will need an App Password).
- *  - char const *phoneEmail: Email for phone number. Usually "number@SMSGateway", to find look up "[Phone Provider] Email to SMS Gateway".
- *  - char const *mailServer: Mail Server for "email" parameter.
+ *  - uint8_t const *email     : User's email, where the email will be sent from.
+ *  - uint8_t const *password  : Password for the "email" parameter. (If two factor is activated user will need an App Password).
+ *  - uint8_t const *phoneEmail: Email for phone number. Usually "number@SMSGateway", to find look up "[Phone Provider] Email to SMS Gateway".
+ *  - uint8_t const *mailServer: Mail Server for "email" parameter.
  *  - FILE *payload         : Pointer to payload file.
  * Return: 
  *  - uint8_t: If the fire data download was a success
  * Description: Downloads latest fire data.
 */
-uint8_t sendText(char const *email, char const *password, char const *phoneEmail, char const *mailServer, FILE *payload)
+uint8_t sendText(uint8_t const *email, uint8_t const *password, uint8_t const *phoneEmail, uint8_t const *mailServer, FILE *payload)
 {
     //Setup curl
     CURL *curl;
@@ -126,6 +120,7 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     curl = curl_easy_init();
     if(curl)
     {
+        /* Open payload for reading */
         payload = fopen("payload.txt", "r");
         if (payload == NULL)
         {
@@ -135,6 +130,7 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
             return ERROR;
         }
 
+        /* Setup curl information */
         curl_easy_setopt(curl, CURLOPT_USERNAME, email);
         curl_easy_setopt(curl, CURLOPT_PASSWORD, password);
         curl_easy_setopt(curl, CURLOPT_URL, mailServer);
@@ -151,9 +147,11 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
         
         /* Setup payload */
         curl_easy_setopt(curl, CURLOPT_READDATA, (void *)payload);
+
         /* Enable uploads */
         curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
 
+        /* Perform sending */
         res = curl_easy_perform(curl);
 
         if(res != CURLE_OK)
@@ -182,7 +180,18 @@ uint8_t sendText(char const *email, char const *password, char const *phoneEmail
     return ERROR;
 }
 
-uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEmail, struct tm  *time)
+/*
+ * Name: buildPayloadHeader
+ * Parameters:
+ *  - FILE *payload         : Pointer to payload file.
+ *  - uint8_t const *email     : User's email, where the email will be sent from.
+ *  - uint8_t const *phoneEmail: Email for phone number. Usually "number@SMSGateway", to find look up "[Phone Provider] Email to SMS Gateway".
+ *  - struct tm  *time      : Time payload header was created, used as subject line.
+ * Return: 
+ *  - uint8_t: If header creation was successful.
+ * Description: Creates payload header with the subject being the current time.
+*/
+uint8_t buildPayloadHeader(FILE *payload, const uint8_t *email, const uint8_t *phoneEmail, struct tm  *time)
 {
     payload = fopen("payload.txt", "w+");
 
@@ -197,11 +206,21 @@ uint8_t buildPayloadHeader(FILE *payload, const char *email, const char *phoneEm
     return ERROR;
 }
 
-uint8_t downloadRequest(char *source, const char *fileName)
+/*
+ * Name: downloadRequest
+ * Parameters:
+ *  - uint8_t *source         : Request url.
+ *  - const uint8_t *fileName : File creation name.
+ * Return: 
+ *  - uint8_t: If requested data was downlaoded correctly.
+ * Description: Curl request for data download and file creation.
+*/
+uint8_t downloadRequest(uint8_t *source, const uint8_t *fileName)
 {
     CURLcode res = CURLE_OK;
     CURL *handle;
 
+    /* Curl init */
     handle = curl_easy_init();
     if (handle == NULL)
     {
@@ -224,6 +243,7 @@ uint8_t downloadRequest(char *source, const char *fileName)
         curl_easy_setopt(handle, CURLOPT_WRITEDATA, data);
         curl_easy_setopt(handle, CURLOPT_FAILONERROR, 1L); //Fail on HTTP error
 
+        /* Need a user agent for the weather alerts */
         if(strncmp(fileName, "alerts.json", 11) == 0)
         {
             struct curl_slist *list = NULL;
@@ -256,12 +276,21 @@ uint8_t downloadRequest(char *source, const char *fileName)
     }
 }
 
-uint8_t getZipCode(const char *zipCode, latLon *location)
+/*
+ * Name: downloadRequest
+ * Parameters:
+ *  - const uint8_t *zipCode : Zip code being used for lat/lon request
+ *  - latLon *location    : Struct to save lat/lon in.
+ * Return: 
+ *  - uint8_t: If latitude and longitude were downloaded & saved succesfully.
+ * Description: Download latitude and longitude from zipcode.
+*/
+uint8_t getZipCode(const uint8_t *zipCode, latLon *location)
 {
     FILE *fp;
     struct stat filestatus;
-    const char *fileName = "zipCodeInfo.json";
-    char *buffer;
+    const uint8_t *fileName = "zipCodeInfo.json";
+    uint8_t *buffer;
 
     /* JSON parsing variables */
     struct json_object *jsonParsed;
@@ -272,7 +301,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     struct json_object *longitude;
 
     /* Create request URL */
-    char zipLUT[115] = "https://public.opendatasoft.com/api/records/1.0/search/?dataset=us-zip-code-latitude-and-longitude&q=";
+    uint8_t zipLUT[115] = "https://public.opendatasoft.com/api/records/1.0/search/?dataset=us-zip-code-latitude-and-longitude&q=";
     strcat(zipLUT,zipCode);
 
     /* Download Latitude/Longitude data */
@@ -288,7 +317,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
             return ERROR;
     }
     /* Dynamically allocate buffer size based on file size */
-    buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
+    buffer = malloc((filestatus.st_size * sizeof(uint8_t)) + 1);
     memset(buffer, 0, filestatus.st_size + 1);
     if(buffer == NULL)
     {
@@ -304,7 +333,7 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
         free(buffer);
         return ERROR;
     }
-    if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
+    if(fread(buffer, sizeof(uint8_t), filestatus.st_size, fp) != filestatus.st_size)
     {
         fprintf(stderr, "Failed to read %s", fileName);
         free(buffer);
@@ -333,14 +362,23 @@ uint8_t getZipCode(const char *zipCode, latLon *location)
     return OK;
 }
 
+/*
+ * Name: getFireData
+ * Parameters:
+ *  - latLon location     : Struct containing lat/lon to use.
+ *  - struct tm  *prevDay : Previous date.
+ * Return: 
+ *  - uint8_t: If fire data was downloaded succesfully.
+ * Description: Creates request url and request data download.
+*/
 uint8_t getFireData(latLon location, struct tm  *prevDay)
 {
     /* Build Request String */
-    const char *baseFireUrl = "https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=";
-    char *fireUrl = malloc(sizeof(uint8_t) * 1500);
+    const uint8_t *baseFireUrl = "https://opendata.arcgis.com/datasets/68637d248eb24d0d853342cba02d4af7_0.geojson?where=";
+    uint8_t *fireUrl = malloc(sizeof(uint8_t) * 1500);
     memset(fireUrl, 0x00, (sizeof(uint8_t) * 1500));
     strcat(fireUrl,baseFireUrl);
-    char targetDate[600] = {'\0'};
+    uint8_t targetDate[600] = {'\0'};
     sprintf(targetDate,"FireDiscoveryDateTime%%20%%3E%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2000%%3A00%%3A00%%27%%20"
                         "AND%%20FireDiscoveryDateTime%%20%%3C%%3D%%20TIMESTAMP%%20%%27%d-%02d-%02d%%2023%%3A59%%3A59%%27%%20"
                         "AND%%20InitialLatitude%%20%%3E%%3D%%20%.6f%%20"
@@ -366,16 +404,24 @@ uint8_t getFireData(latLon location, struct tm  *prevDay)
     }
     return OK;
 }
-
+/*
+ * Name: getWeatherAlerts
+ * Parameters:
+ *  - latLon location     : Struct containing lat/lon to use.
+ *  - struct tm  *prevDay : Previous date.
+ * Return: 
+ *  - uint8_t: If fire data was downloaded succesfully.
+ * Description: Creates weather alerts request url and request data download.
+*/
 uint8_t getWeatherAlerts(latLon location)
 {
-    const char *baseAlertURL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert&certainty=observed&point=";
+    const uint8_t *baseAlertURL = "https://api.weather.gov/alerts/active?status=actual&message_type=alert&certainty=observed&point=";
 
     /* Build the Weather Alerts request URL */
-    char *requestUrl = malloc(sizeof(uint8_t) * 121);
+    uint8_t *requestUrl = malloc(sizeof(uint8_t) * 121);
     memset(requestUrl, 0x00, (sizeof(uint8_t) * 121));
     strcat(requestUrl, baseAlertURL);
-    char parameters[24] = {'\0'};
+    uint8_t parameters[24] = {'\0'};
     sprintf(parameters, "%.6f%%2C%.6f", location.lat, location.lon);
     strcat(requestUrl, parameters);
     
@@ -395,12 +441,21 @@ uint8_t getWeatherAlerts(latLon location)
     return OK;
 }
 
+/*
+ * Name: getQuakeData
+ * Parameters:
+ *  - latLon location     : Struct containing lat/lon to use.
+ *  - struct tm  *prevDay : Previous date.
+ * Return: 
+ *  - uint8_t: If earthquake data was downloaded succesfully.
+ * Description: Creates earthquake request url and request data download.
+*/
 uint8_t getQuakeData(latLon location, struct tm  *prevDay)
 {
     /* Making request string */
-    char earthquakeUrl[250] = {'\0'};
+    uint8_t earthquakeUrl[250] = {'\0'};
     strcat(earthquakeUrl,"https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&maxradiuskm=4.8&minmagnitude=2.5&");
-    char quakeUrlParams[50] = {'\0'};
+    uint8_t quakeUrlParams[50] = {'\0'};
     sprintf(quakeUrlParams,"latitude=%.3f&longitude=%.3f&starttime=%d-%d-%d",location.lat,location.lon, (prevDay->tm_year) + 1900, (prevDay->tm_mon) + 1, prevDay->tm_mday);
     strcat(earthquakeUrl,quakeUrlParams);
     /* Download earthquake data */
@@ -418,12 +473,20 @@ uint8_t getQuakeData(latLon location, struct tm  *prevDay)
     return OK;
 }
 
+/*
+ * Name: extractData
+ * Parameters:
+ *  - const uint8_t *fileName : File name to target for data extraction.
+ * Return: 
+ *  - uint8_t: If file json extraction was successful.
+ * Description: Extracts data depending on file requested
+*/
 uint8_t extractData(const uint8_t *fileName)
 {
     /* Extract Data */
     FILE *fp;
     struct stat filestatus;
-    char *buffer;
+    uint8_t *buffer;
     struct json_object *jsonParsed;
     struct json_object *data;
     struct json_object *element;
@@ -437,7 +500,7 @@ uint8_t extractData(const uint8_t *fileName)
             return ERROR;
     }
     /* Dynamically allocate buffer size based on file size */
-    buffer = malloc((filestatus.st_size * sizeof(char)) + 1);
+    buffer = malloc((filestatus.st_size * sizeof(uint8_t)) + 1);
     memset(buffer, 0, filestatus.st_size + 1);
     if(buffer == NULL)
     {
@@ -453,7 +516,7 @@ uint8_t extractData(const uint8_t *fileName)
         free(buffer);
         return ERROR;
     }
-    if(fread(buffer, sizeof(char), filestatus.st_size, fp) != filestatus.st_size)
+    if(fread(buffer, sizeof(uint8_t), filestatus.st_size, fp) != filestatus.st_size)
     {
         fprintf(stderr, "Failed to read %s", fileName);
         free(buffer);
@@ -483,9 +546,10 @@ uint8_t extractData(const uint8_t *fileName)
         fclose(pl);
         return OK;
     }
-
+    /* Number of events to extract, used for for loops */
     size_t arrayLen = json_object_array_length(data);
 
+    /* if fire data extract the incident name and the description.*/
     if (strcmp(fileName, "fire.json") == 0)
     {
         fprintf(pl,"\n===Fires===\n");
@@ -524,6 +588,7 @@ uint8_t extractData(const uint8_t *fileName)
         fclose(pl);
         return OK;
     }
+    /* If earthquake data extract the title*/
     else if (strcmp(fileName, "earthquake.json") == 0)
     {
         fprintf(pl,"\n===Earthquake(s)===\n");
@@ -553,6 +618,7 @@ uint8_t extractData(const uint8_t *fileName)
         fclose(pl);
         return OK;
     }
+    /* If weather alerts extract the alert headline */
     else if (strcmp(fileName, "alerts.json") == 0)
     {
         fprintf(pl,"\n===Weather Alerts===\n");

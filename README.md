@@ -3,8 +3,8 @@ Run to see if any fires, earthquakes, or weather alerts have happened the previo
 The program downloads with curl fire, earthquake and weather alerts for the latitude and longitude associated with your zipcode. It then creates a payload that is sent using curl from your email address to a phones email-to-text address (You can find this by searching "[Phone service provider] email to text" which is then sent to the phone number as a text.
 
 Dependencies:
-libcurl4-openssl-dev
-libjson-c-dev
+- libcurl4-openssl-dev
+- libjson-c-dev
 
 To compile you will need the curl and json-c flags
 
